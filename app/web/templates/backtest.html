@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block head %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет синхронизированного счёта</div><p class="empty-text">Синхронизируйте данные, чтобы построить backtest.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><div><h2 class="panel-title">Backtest buy-and-hold</h2><p class="panel-sub">Текущие позиции и cash переоцениваются по историческим дневным свечам. Без реинвестирования дивидендов и изменения курсов.</p></div><span class="badge neutral">Оценка, не прогноз</span></div>
+  <div class="panel-body">
+    <form class="btn-row" method="get" action="/backtest">
+      <label class="field" style="max-width: 220px;"><span>Период</span>
+        <select name="days">
+          {% for option in [30, 90, 180, 365, 730] %}
+          <option value="{{ option }}" {{ 'selected' if days == option }}>{{ option }} дней</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn primary" type="submit">Построить</button>
+      <span class="muted">Только чтение: свечи запрашиваются у T-Invest, сделки не создаются.</span>
+    </form>
+    {% if result and result.warnings %}
+    <div class="warning-box" style="margin-top: 16px;"><ul>{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  </div>
+</section>
+
+{% if result and result.points %}
+<div class="metric-grid" style="margin-top: 18px;">
+  <div class="metric"><div class="metric-label">Начало</div><div class="metric-value numeric">{{ result.start_value|money(portfolio.base_currency) }}</div><div class="metric-foot">{{ result.start_at|dt_ru }}</div></div>
+  <div class="metric"><div class="metric-label">Конец</div><div class="metric-value numeric">{{ result.end_value|money(portfolio.base_currency) }}</div><div class="metric-foot">{{ result.end_at|dt_ru }}</div></div>
+  <div class="metric"><div class="metric-label">Доходность</div><div class="metric-value numeric {{ 'positive-text' if result.total_return_percent > 0 else 'negative-text' if result.total_return_percent < 0 }}" style="font-size:22px">{{ result.total_return_percent|percent }}</div><div class="metric-foot">{{ result.points|length }} точек</div></div>
+  <div class="metric"><div class="metric-label">Макс. просадка</div><div class="metric-value numeric negative-text" style="font-size:22px">{{ result.max_drawdown_percent|percent }}</div><div class="metric-foot">Период {{ result.days }} дней</div></div>
+</div>
+
+<section class="panel" style="margin-top: 18px;">
+  <div class="panel-head"><div><h2 class="panel-title">Кривая стоимости</h2><p class="panel-sub">Без учёта комиссий и налогов</p></div></div>
+  <div class="panel-body">
+    <div class="equity-wrap"><canvas id="backtest-chart" data-backtest="{{ chart_rows|tojson|forceescape }}" aria-label="График backtest"></canvas></div>
+  </div>
+</section>
+{% elif result %}
+<section class="panel" style="margin-top: 18px;"><div class="empty-state"><div class="empty-title">Нет данных для backtest</div><p class="empty-text">Проверьте доступность исторических свечей или уменьшите период.</p></div></section>
+{% endif %}
+{% endif %}
+{% endblock %}

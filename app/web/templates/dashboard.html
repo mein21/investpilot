@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block head %}
+<script src="/static/vendor/chart.umd.min.js" defer></script>
+{% endblock %}
+{% block content %}
+{% if account is none %}
+<section class="panel">
+  <div class="empty-state">
+    <div class="empty-icon">01</div>
+    <div class="empty-title">Портфель ещё не синхронизирован</div>
+    <p class="empty-text">Подключите mock-клиент для демонстрации или настройте T-Invest REST в <span class="mono">.env</span>. Синхронизация создаст счета, инструменты, позиции и историю операций.</p>
+    <form method="post" action="/sync" hx-post="/sync" hx-swap="none" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit"><span class="htmx-indicator spinner"></span> Синхронизировать</button>
+    </form>
+  </div>
+</section>
+{% else %}
+<section class="flight-plan">
+  <div class="flight-plan-grid">
+    <div class="flight-total">
+      <div class="eyebrow">Стоимость портфеля</div>
+      <div class="flight-amount numeric" data-countup="{{ portfolio.total_value }}" data-countup-currency="{{ portfolio.base_currency }}">{{ portfolio.total_value|money(portfolio.base_currency) }}</div>
+      <p class="flight-caption">На {{ portfolio.as_of|dt_ru }} · {{ portfolio.positions|length }} позиций · {{ account.name }}</p>
+    </div>
+    <div class="flight-goal">
+      {% if goal and progress %}
+      <div class="eyebrow">Цель · {{ goal.name }}</div>
+      <div class="flight-goal-line">
+        <strong class="numeric">{{ progress.progress_percent|percent }}</strong>
+        <span>{{ progress.current_value|money(goal.currency) }} из {{ progress.target_amount|money(goal.currency) }}</span>
+      </div>
+      <div class="route-track" aria-label="Прогресс цели {{ progress.progress_percent|percent }}"><div class="route-fill" data-width="{{ progress.progress_percent }}"></div></div>
+      <div class="flight-goal-foot"><span>{{ progress.days_left }} дн. до цели</span><span>Осталось {{ progress.remaining_amount|money(goal.currency) }}</span></div>
+      {% else %}
+      <div class="eyebrow">Цель не задана</div>
+      <p class="flight-caption">Создайте цель, чтобы видеть курс капитала и правила портфеля.</p>
+      <a class="link" href="/goals/new">Создать цель →</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="course">
+    <div class="course-head"><span class="eyebrow">Курс капитала</span><span class="course-note">доли классов · {{ portfolio.as_of|short_dt }}</span></div>
+    {% if portfolio.allocation %}
+    <div class="course-track" role="img" aria-label="Распределение капитала по классам активов">
+      {% for row in portfolio.allocation %}
+      <div class="course-seg seg-{{ row.asset_class.value|lower }}" style="--w: {{ row.weight_percent }}%; --i: {{ loop.index0 }}" title="{{ row.asset_class.label_ru }} {{ row.weight_percent|percent }}">
+        {% if row.weight_percent >= 8 %}<span>{{ row.asset_class.label_ru }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="course-legend">
+      {% for row in portfolio.allocation %}
+      <span class="course-key"><i class="key-{{ row.asset_class.value|lower }}"></i>{{ row.asset_class.label_ru }}<b>{{ row.weight_percent|percent }}</b></span>
+      {% endfor %}
+    </div>
+    {% else %}<div class="muted">Нет данных аллокации.</div>{% endif %}
+  </div>
+
+  <div class="flight-stats">
+    <div class="flight-stat"><span>Инвестировано</span><strong class="numeric">{{ portfolio.invested_value|money(portfolio.base_currency) }}</strong><small>{{ portfolio.positions|length }} позиций</small></div>
+    <div class="flight-stat"><span>Свободные деньги</span><strong class="numeric">{{ portfolio.free_cash_value|money(portfolio.base_currency) }}</strong><small>Всего cash {{ portfolio.cash_value|money(portfolio.base_currency) }}</small></div>
+    <div class="flight-stat"><span>Нереализованный P&amp;L</span><strong class="numeric {{ 'positive-text' if portfolio.unrealized_pnl > 0 else 'negative-text' if portfolio.unrealized_pnl < 0 }}">{{ portfolio.unrealized_pnl|money(portfolio.base_currency, signed=True) }}</strong><small>Оценка на {{ portfolio.as_of|short_dt }}</small></div>
+    <div class="flight-stat"><span>Реализованный P&amp;L</span><strong class="numeric {{ 'positive-text' if portfolio.realized_pnl > 0 else 'negative-text' if portfolio.realized_pnl < 0 }}">{{ portfolio.realized_pnl|money(portfolio.base_currency, signed=True) }}</strong><small>Комиссии {{ portfolio.commission_paid|money(portfolio.base_currency) }}</small></div>
+  </div>
+</section>
+
+<div class="action-deck">
+  <div class="action-group">
+    <form method="post" action="/sync" hx-post="/sync" hx-swap="none" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn" type="submit"><span class="htmx-indicator spinner"></span> Синхронизировать</button>
+    </form>
+    {% if can_recommend %}
+    <form method="post" action="/recommendations/refresh" hx-post="/recommendations/refresh" hx-swap="none" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit" title="Обновит скринер и рекомендации; может занять до минуты"><span class="htmx-indicator spinner"></span> Рассчитать рекомендации</button>
+    </form>
+    {% else %}
+    <span class="badge warning">OBSERVE: только чтение</span>
+    {% endif %}
+  </div>
+  <div class="action-meta">
+    {% if latest_sync %}
+    <span class="badge {{ 'positive' if latest_sync.status.value == 'OK' else 'warning' if latest_sync.status.value == 'PARTIAL' else 'negative' }}">
+      Sync {{ latest_sync.status.value }} · {{ latest_sync.finished_at|short_dt if latest_sync.finished_at else '—' }}
+    </span>
+    {% endif %}
+    <span class="mono faint">UTC · {{ portfolio.as_of|short_dt }}</span>
+  </div>
+</div>
+
+<section class="panel equity-panel">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">Динамика стоимости</h2>
+      <p class="panel-sub">Снимки стоимости портфеля · {{ equity_rows|length }} шт.</p>
+    </div>
+    <span class="badge neutral">{{ settings.base_currency }}</span>
+  </div>
+  <div class="panel-body">
+    {% if equity_rows %}
+    <div class="equity-wrap"><canvas id="equity-chart" data-equity="{{ equity_rows|tojson|forceescape }}" aria-label="График стоимости портфеля"></canvas></div>
+    {% else %}
+    <div class="muted">Снимки появятся после следующей синхронизации или планового задания.</div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="split">
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">Позиции</h2>
+        <p class="panel-sub">Крупнейшие активы портфеля</p>
+      </div>
+      <a class="link" href="/positions">Все</a>
+    </div>
+    <div class="panel-body flush">
+      {% if portfolio.positions %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Инструмент</th><th class="text-right">Стоимость</th><th class="text-right">Вес</th><th class="text-right">P&amp;L</th></tr></thead>
+          <tbody>
+          {% for row in portfolio.positions[:6] %}
+            <tr>
+              <td><div class="ticker">{{ row.ticker }}</div><div class="instrument-name">{{ row.name }}</div></td>
+              <td class="text-right numeric">{{ row.value_base|money(portfolio.base_currency) }}</td>
+              <td class="text-right numeric">{{ row.weight_percent|percent }}</td>
+              <td class="text-right numeric {{ 'positive-text' if row.unrealized_pnl > 0 else 'negative-text' if row.unrealized_pnl < 0 }}">{{ row.unrealized_pnl|money(portfolio.base_currency, signed=True) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}<div class="empty-state"><div class="empty-text">Позиций нет.</div></div>{% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">Свежие рекомендации</h2>
+        <p class="panel-sub">Требуют вашего решения</p>
+      </div>
+      <a class="link" href="/recommendations">Все</a>
+    </div>
+    <div class="panel-body">
+      {% if recommendations %}
+      <div class="list">
+        {% for item in recommendations %}
+        <div class="list-row">
+          <span class="badge {{ item.action|action_tone }}">{{ item.action|action_label }}</span>
+          <div class="list-main">
+            <div class="list-title">{{ item.ticker }}</div>
+            <div class="list-sub">{{ item.reason|truncate(92, true, '…') }}</div>
+          </div>
+          <div class="list-side">
+            <div class="amount numeric">{{ item.estimated_amount|money(item.currency) }}</div>
+            <div class="list-sub">{{ item.lots }} лот.</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state" style="padding: 26px 0;">
+        <div class="empty-text">Новых рекомендаций нет. Запустите расчёт после синхронизации.</div>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+{% if warnings %}
+<section class="panel">
+  <div class="panel-head"><div><h2 class="panel-title">Предупреждения</h2><p class="panel-sub">Данные, требующие внимания</p></div></div>
+  <div class="panel-body">
+    <div class="warning-box">
+      <strong>{{ warnings|length }} замечаний</strong>
+      <ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

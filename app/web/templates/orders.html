@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет синхронизированного счёта</div><p class="empty-text">Сначала синхронизируйте портфель.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<div class="btn-row" style="margin-bottom: 18px;">
+  <span class="badge {{ 'accent' if can_trade else 'warning' }}">{{ 'Создание заявок разрешено' if can_trade else 'Только просмотр' }}</span>
+  <span class="badge {{ 'negative' if not settings.tinvest_sandbox else 'positive' }}">{{ 'REAL' if not settings.tinvest_sandbox else 'SANDBOX' }}</span>
+  <span class="muted">Лимит заявки {{ settings.max_order_amount|money(settings.base_currency) }} · {{ settings.max_daily_order_count }} в день</span>
+</div>
+
+{% if not can_trade %}
+<div class="warning-box" style="margin-bottom: 18px;">Режим {{ trading_mode_label }}: заявки можно создавать только в PAPER или CONFIRM. Автоматическая отправка отсутствует.</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><div><h2 class="panel-title">Журнал заявок</h2><p class="panel-sub">Заявка создаётся только после явного одобрения рекомендации и отдельной отправки</p></div></div>
+  <div class="panel-body flush">
+    {% if orders %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Создана</th><th>Инструмент</th><th>Сторона</th><th class="text-right">Лоты</th><th class="text-right">Цена</th><th class="text-right">Сумма</th><th>Статус</th><th>Брокер</th><th class="text-right actions-col">Действия</th></tr></thead>
+        <tbody>
+        {% for order in orders %}
+        <tr>
+          <td class="nowrap faint">{{ order.created_at|short_dt }}</td>
+          <td>
+            <div class="ticker">{{ order.instrument.ticker }}</div>
+            <div class="instrument-name">{{ order.instrument.name }}</div>
+            {% if order.error_message %}<div class="cell-note negative-text">{{ order.error_message|truncate(70, true, '…') }}</div>{% endif %}
+            {% if order.warning_message %}<div class="cell-note warning-text">{{ order.warning_message|truncate(70, true, '…') }}</div>{% endif %}
+          </td>
+          <td><span class="badge {{ 'positive' if order.side.value == 'BUY' else 'negative' }}">{{ order.side|side_label }}</span></td>
+          <td class="text-right numeric">{{ order.lots }}<div class="cell-note">исполнено {{ order.lots_executed }}</div></td>
+          <td class="text-right numeric">{{ order.limit_price|money(order.currency) }}</td>
+          <td class="text-right numeric">{{ order.estimated_amount|money(order.currency) }}<div class="cell-note">комиссия {{ order.commission_estimate|money(order.currency) }}</div></td>
+          <td><span class="badge {{ order.status|status_tone }}">{{ order.status|order_status_label }}</span>{% if order.executions %}<div class="cell-note">{{ order.executions|length }} исполн.</div>{% endif %}</td>
+          <td class="mono faint">{{ order.broker_order_id or '—' }}</td>
+          <td class="text-right actions-col">
+            <div class="btn-row" style="justify-content: flex-end;">
+              {% if order.status.value == 'APPROVED' %}
+              <form method="post" action="/orders/{{ order.id }}/send" hx-post="/orders/{{ order.id }}/send" hx-swap="none" hx-disabled-elt="find button">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn small primary" type="submit" {% if not can_trade %}disabled{% endif %} data-confirm="Отправить заявку брокеру? Повторная отправка после неизвестного исхода запрещена.">Отправить</button>
+              </form>
+              {% elif order.status.value in ['SENT', 'PARTIALLY_FILLED', 'SUBMIT_UNKNOWN'] %}
+              <form method="post" action="/orders/{{ order.id }}/reconcile" hx-post="/orders/{{ order.id }}/reconcile" hx-swap="none" hx-disabled-elt="find button">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn small" type="submit">Сверить</button>
+              </form>
+              {% endif %}
+              {% if order.status.value in ['SENT', 'PARTIALLY_FILLED'] %}
+              <form method="post" action="/orders/{{ order.id }}/cancel" hx-post="/orders/{{ order.id }}/cancel" hx-swap="none" hx-disabled-elt="find button">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn small danger" type="submit" data-confirm="Отменить заявку у брокера?">Отменить</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty-state"><div class="empty-title">Заявок пока нет</div><p class="empty-text">Одобрите рекомендацию в разделе «Рекомендации», затем отправьте заявку здесь.</p><a class="btn" href="/recommendations">К рекомендациям</a></div>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

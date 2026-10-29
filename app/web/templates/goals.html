@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет синхронизированного счёта</div><p class="empty-text">Сначала синхронизируйте портфель, затем создайте цель.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<div class="btn-row" style="margin-bottom: 18px;">
+  <a class="btn primary" href="/goals/new">Новая цель</a>
+  {% if goal %}<a class="btn" href="/goals/{{ goal.id }}/edit">Редактировать</a>{% endif %}
+  {% if goals|length > 1 %}
+  <div class="tabs">
+    {% for item in goals %}<a class="tab {{ 'active' if goal and item.id == goal.id }}" href="/goals?goal_id={{ item.id }}">{{ item.name }}</a>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% if goal and progress %}
+<div class="metric-grid">
+  <div class="metric"><div class="metric-label">Текущая стоимость</div><div class="metric-value numeric">{{ progress.current_value|money(goal.currency) }}</div><div class="metric-foot">Всего портфель {{ portfolio.total_value|money(portfolio.base_currency) }}</div></div>
+  <div class="metric"><div class="metric-label">Цель</div><div class="metric-value numeric">{{ progress.target_amount|money(goal.currency) }}</div><div class="metric-foot">до {{ goal.target_date|date_ru }}</div></div>
+  <div class="metric"><div class="metric-label">Прогресс</div><div class="metric-value numeric">{{ progress.progress_percent|percent }}</div><div class="metric-foot">{{ progress.days_left }} дней осталось</div></div>
+  <div class="metric"><div class="metric-label">Нужно в месяц</div><div class="metric-value numeric">{{ progress.required_monthly|money(goal.currency) }}</div><div class="metric-foot">Взнос {{ progress.regular_contribution|money(goal.currency) }} · дефицит {{ progress.contribution_gap|money(goal.currency) }}</div></div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">{{ goal.name }}</h2>
+      <p class="panel-sub">{{ goal.description or 'Без описания' }} · {{ goal.risk_profile|risk_label }} · {{ goal.contribution_frequency }}</p>
+    </div>
+    <span class="badge {{ 'positive' if progress.is_reached else 'warning' if progress.is_overdue else 'accent' }}">{{ 'Достигнута' if progress.is_reached else 'Просрочена' if progress.is_overdue else 'В работе' }}</span>
+  </div>
+  <div class="panel-body">
+    <div class="progress"><div class="progress-fill" data-width="{{ progress.progress_percent }}"></div></div>
+    <div class="progress-meta"><span>Осталось {{ progress.remaining_amount|money(goal.currency) }}</span><span>{{ progress.progress_percent|percent }}</span></div>
+    <div class="goal-breakdown">
+      <div><div class="label">Мин. cash reserve</div><div class="value numeric">{{ goal.min_cash_reserve|money(goal.currency) }}</div></div>
+      <div><div class="label">Макс. просадка</div><div class="value numeric">{{ goal.max_drawdown_percent|percent }}</div></div>
+      <div><div class="label">Stop-loss</div><div class="value">{{ goal.stop_loss_percent|percent if goal.stop_loss_enabled and goal.stop_loss_percent is not none else 'Выключен' }}</div></div>
+      <div><div class="label">Take-profit</div><div class="value">{{ goal.take_profit_percent|percent if goal.take_profit_enabled and goal.take_profit_percent is not none else 'Выключен' }}</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <div class="panel-head"><div><h2 class="panel-title">Целевая аллокация</h2><p class="panel-sub">Текущий вес против диапазона цели</p></div></div>
+  <div class="panel-body">
+    {% if allocation_rows %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Класс</th><th class="text-right">Сейчас</th><th class="text-right">Цель</th><th class="text-right">Диапазон</th><th class="text-right">Стоимость</th><th>Позиция в диапазоне</th></tr></thead>
+        <tbody>
+        {% for row in allocation_rows %}
+        <tr>
+          <td><span class="badge neutral">{{ row.allocation.asset_class|asset_label }}</span></td>
+          <td class="text-right numeric">{{ row.current_weight|percent }}</td>
+          <td class="text-right numeric">{{ row.allocation.target_percent|percent }}</td>
+          <td class="text-right numeric faint">{{ row.allocation.min_percent|percent }} — {{ row.allocation.max_percent|percent }}</td>
+          <td class="text-right numeric">{{ row.current_value|money(portfolio.base_currency) }}</td>
+          <td>
+            <div class="allocation-bar">
+              <span data-width="{{ row.current_weight }}"></span>
+              <span class="target" data-left="{{ row.allocation.target_percent }}"></span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="muted">Целевые доли не заданы.</div>{% endif %}
+  </div>
+</section>
+
+{% if goal.currency != portfolio.base_currency %}
+<div class="warning-box" style="margin-top: 18px;">Валюта цели {{ goal.currency }} отличается от базовой {{ portfolio.base_currency }}. Прогресс показан без конвертации.</div>
+{% endif %}
+{% else %}
+<section class="panel"><div class="empty-state"><div class="empty-icon">02</div><div class="empty-title">Создайте первую цель</div><p class="empty-text">Цель задаёт сумму, дату и целевые диапазоны классов. На их основе работают рекомендации и риск-проверки.</p><a class="btn primary" href="/goals/new">Создать цель</a></div></section>
+{% endif %}
+{% endif %}
+{% endblock %}

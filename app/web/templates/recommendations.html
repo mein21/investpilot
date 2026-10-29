@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет данных для рекомендаций</div><p class="empty-text">Сначала синхронизируйте счёт и создайте цель.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<div class="btn-row" style="margin-bottom: 18px;">
+  {% if can_recommend %}
+  <form method="post" action="/recommendations/refresh" hx-post="/recommendations/refresh" hx-swap="none" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn primary" type="submit"><span class="htmx-indicator spinner"></span> Обновить с рынка</button>
+  </form>
+  <form method="post" action="/recommendations/generate" hx-post="/recommendations/generate" hx-swap="none" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn ghost" type="submit"><span class="htmx-indicator spinner"></span> Пересчитать по кэшу</button>
+  </form>
+  {% else %}
+  <span class="badge warning">OBSERVE: только чтение</span>
+  {% endif %}
+  <span class="badge neutral">Правила rules-v4</span>
+  <span class="badge {{ 'accent' if can_trade else 'warning' }}">{{ 'Заявки разрешены' if can_trade else 'Только рекомендации' }}</span>
+  <span class="muted">автообновление {{ settings.recommendations_auto_interval_minutes }} мин · TTL {{ settings.recommendation_ttl_minutes }} мин · порог {{ settings.rebalance_threshold_percent|percent }} · «с рынка» обновляет скринер и может занять до минуты</span>
+</div>
+{% if portfolio %}
+<p class="muted" style="margin-bottom: 18px;">Свободно для новых покупок: <strong>{{ portfolio.free_cash_value|money(portfolio.base_currency) }}</strong> · зарезервированные под заявки деньги не используются</p>
+{% endif %}
+
+{% if not can_recommend %}
+<div class="warning-box" style="margin-bottom: 18px;">Режим <strong>{{ trading_mode_label }}</strong> разрешает только чтение данных. Переключите TRADING_MODE на RECOMMEND или выше, чтобы рассчитывать рекомендации.</div>
+{% elif not can_trade %}
+<div class="warning-box" style="margin-bottom: 18px;">Режим <strong>{{ trading_mode_label }}</strong> не создаёт заявки. Для одобрения переключите TRADING_MODE на PAPER (mock) или CONFIRM (sandbox/real) и перезапустите приложение.</div>
+{% endif %}
+
+{% if can_recommend %}
+<div class="universe-form">
+  <span class="faint">Вселенная покупок:</span>
+  <form method="post" action="/instruments/universe" hx-post="/instruments/universe" hx-swap="none" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn ghost small" type="submit"><span class="htmx-indicator spinner"></span> Загрузить все инструменты</button>
+  </form>
+  <span class="faint">или добавить одну бумагу:</span>
+  <form method="post" action="/instruments/add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="text" name="ticker" placeholder="Тикер, например LKOH" required maxlength="32">
+    <input type="text" name="class_code" placeholder="Класс, TQBR" maxlength="32">
+    <button class="btn ghost small" type="submit">Добавить</button>
+  </form>
+</div>
+{% endif %}
+
+{% if fresh %}
+<div class="rec-grid" style="margin-bottom: 22px;">
+  {% for item in fresh %}
+  <article class="rec-card {{ item.action.value|lower }}">
+    <div class="rec-head">
+      <div>
+        <div class="rec-ticker">{{ item.ticker or 'PORTFOLIO' }}</div>
+        <div class="rec-meta">{{ item.instrument.name if item.instrument else 'Портфельная рекомендация' }}{% if item.instrument %} · {{ item.instrument.asset_class|asset_label }}{% endif %}</div>
+      </div>
+      <span class="badge {{ item.action|action_tone }}">{{ item.action|action_label }}</span>
+    </div>
+    <p class="rec-reason">{{ item.reason }}</p>
+    {% if item.action.value == 'REBALANCE' %}
+    <div class="rec-stats" style="border-bottom: 0;">
+      <div class="rec-stat"><div class="label">Ног</div><div class="value">{{ item.triggered_rules|length }}</div></div>
+      <div class="rec-stat"><div class="label">Оборот</div><div class="value">{{ item.estimated_amount|money(item.currency) }}</div></div>
+      <div class="rec-stat"><div class="label">Комиссия</div><div class="value">{{ item.commission_estimate|money(item.currency) }}</div></div>
+    </div>
+    {% else %}
+    <div class="rec-stats">
+      <div class="rec-stat"><div class="label">Лоты</div><div class="value">{{ item.lots }}</div></div>
+      <div class="rec-stat"><div class="label">Сумма</div><div class="value">{{ item.estimated_amount|money(item.currency) }}</div></div>
+      <div class="rec-stat"><div class="label">Цена за лот</div><div class="value">{{ item.price_per_lot|money(item.currency) }}</div>{% if item.instrument and item.instrument.asset_class.value == 'BOND' %}<div class="cell-note">котировка {{ item.quote_price|percent }} от номинала</div>{% endif %}</div>
+    </div>
+    <div class="rec-stats" style="border-bottom: 0;">
+      <div class="rec-stat"><div class="label">Вес сейчас</div><div class="value">{{ item.current_weight|percent }}</div></div>
+      <div class="rec-stat"><div class="label">После</div><div class="value">{{ item.expected_weight_after|percent }}</div></div>
+      <div class="rec-stat"><div class="label">Score</div><div class="value">{{ item.score|percent if item.score is not none else '—' }}</div></div>
+    </div>
+    {% endif %}
+    {% if item.action.value == 'BUY' and item.score_breakdown %}
+    <ul class="rules">
+      {% for part in item.score_breakdown %}{% if part.component in ['screener_rating', 'momentum', 'trend_quality', 'stability'] %}<li class="rule-tag pass" title="{{ part.reason }}">{{ part.title }} {{ part.value|percent }}</li>{% endif %}{% endfor %}
+    </ul>
+    {% endif %}
+    {% if item.triggered_rules %}
+    <ul class="rules">
+      {% for rule in item.triggered_rules %}<li class="rule-tag pass">{{ rule.title if rule.title else rule.code }}</li>{% endfor %}
+      {% for rule in item.blocking_rules %}<li class="rule-tag fail">{{ rule.title if rule.title else rule.code }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    <div class="rec-foot">
+      <span class="faint">до {{ item.expires_at|dt_ru }}</span>
+      {% if item.action.value in ['BUY', 'SELL'] and item.expires_at > now %}
+      <div class="btn-row">
+        <form method="post" action="/recommendations/{{ item.id }}/reject" hx-post="/recommendations/{{ item.id }}/reject" hx-swap="none" hx-disabled-elt="find button">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn small ghost" type="submit">Отклонить</button>
+        </form>
+        <form method="post" action="/recommendations/{{ item.id }}/approve" hx-post="/recommendations/{{ item.id }}/approve" hx-swap="none" hx-disabled-elt="find button">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn small primary" type="submit" {% if not can_trade %}disabled title="Переключите TRADING_MODE"{% endif %} data-confirm="Одобрить рекомендацию и создать заявку? Заявка не будет отправлена автоматически.">Одобрить</button>
+        </form>
+      </div>
+      {% elif item.expires_at <= now %}
+      <span class="badge warning">Истекла</span>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<section class="panel" style="margin-bottom: 22px;"><div class="empty-state"><div class="empty-title">Новых рекомендаций нет</div><p class="empty-text">Рекомендации обновляются автоматически после синхронизации. HOLD-рекомендации отображаются в истории.</p></div></section>
+{% endif %}
+
+{% if growth_enabled %}
+<section class="panel" style="margin-bottom: 22px;">
+  <div class="panel-head">
+    <div><h2 class="panel-title">Перспективные бумаги</h2><p class="panel-sub">Детерминированный анализ дневных свечей: риск-скорректированный импульс, качество тренда и просадка. Не прогноз доходности.</p></div>
+    <div class="btn-row">
+      {% if growth_coverage %}<span class="badge neutral">{{ growth_coverage.fresh }}/{{ growth_coverage.candidates }} свежих</span>{% endif %}
+      {% if can_recommend %}
+      <form method="post" action="/growth/scan" hx-post="/growth/scan" hx-swap="none" hx-disabled-elt="find button">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn ghost small" type="submit"><span class="htmx-indicator spinner"></span> Обновить анализ</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="panel-body flush">
+    {% if growth_rows %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Инструмент</th><th class="text-right">Growth</th><th class="text-right">Импульс</th><th class="text-right">Тренд</th><th class="text-right">Устойчивость</th><th class="text-right">1м</th><th class="text-right">3м</th><th class="text-right">6м</th><th class="text-right">Волатильность</th><th class="text-right">Просадка 6м</th><th>Обновлено</th></tr></thead>
+        <tbody>
+        {% for row in growth_rows %}
+          <tr>
+            <td><span class="ticker">{{ row.instrument.ticker }}</span><div class="cell-note">{{ row.instrument.name }} · {{ row.instrument.asset_class|asset_label }}</div></td>
+            <td class="text-right numeric"><strong>{{ row.score.composite|percent }}</strong></td>
+            <td class="text-right numeric">{{ row.score.momentum|percent }}</td>
+            <td class="text-right numeric">{{ row.score.trend|percent }}</td>
+            <td class="text-right numeric">{{ row.score.stability|percent }}</td>
+            <td class="text-right numeric">{{ row.metric.return_1m_percent|percent(signed=True) }}</td>
+            <td class="text-right numeric">{{ row.metric.return_3m_percent|percent(signed=True) }}</td>
+            <td class="text-right numeric">{{ row.metric.return_6m_percent|percent(signed=True) }}</td>
+            <td class="text-right numeric">{{ row.metric.volatility_annual_percent|percent }}</td>
+            <td class="text-right numeric">{{ row.metric.max_drawdown_6m_percent|percent }}</td>
+            <td class="nowrap faint">{{ row.metric.computed_at|short_dt }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="padding: 12px 20px 16px;">Классы анализа: {{ settings.growth_asset_classes }} · кэш {{ settings.growth_cache_hours }} ч · горизонт {{ settings.growth_history_days }} дн. Денежные фонды с низкой доходностью и волатильностью исключены из growth-рейтинга. Score — правило ранжирования, а не прогноз цены.</p>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-title">Анализ роста ещё не рассчитан</div>
+      <p class="empty-text">Анализ выполняется автоматически по расписанию; кнопка запускает внеочередное обновление. Без истории используется нейтральная оценка, чтобы не искажать выбор.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><div><h2 class="panel-title">История</h2><p class="panel-sub">Последние решения и их статусы</p></div></div>
+  <div class="panel-body flush">
+    {% if history %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Дата</th><th>Инструмент</th><th>Действие</th><th class="text-right">Лоты</th><th class="text-right">Сумма</th><th>Статус</th><th>Решение</th><th>Причина</th></tr></thead>
+        <tbody>
+        {% for item in history %}
+        <tr>
+          <td class="nowrap faint">{{ item.calculated_at|short_dt }}</td>
+          <td><span class="ticker">{{ item.ticker }}</span></td>
+          <td><span class="badge {{ item.action|action_tone }}">{{ item.action|action_label }}</span></td>
+          <td class="text-right numeric">{{ item.lots }}</td>
+          <td class="text-right numeric">{{ item.estimated_amount|money(item.currency) }}</td>
+          <td><span class="badge neutral">{{ item.status|recommendation_status_label }}</span></td>
+          <td class="faint">{{ item.decided_by or '—' }}</td>
+          <td class="muted">{{ item.reason|truncate(80, true, '…') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty-state"><div class="empty-text">История пуста.</div></div>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

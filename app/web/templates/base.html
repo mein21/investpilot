@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ page_title or "Обзор" }} · {{ settings.app_name }}</title>
+  <link rel="stylesheet" href="/static/style.css?v=14">
+  {% block head %}{% endblock %}
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js?v=14" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#content">К содержанию</a>
+<div class="app-shell">
+  <header class="topdeck">
+    <a class="brand" href="/" aria-label="InvestPilot Local — на главную">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="10.5" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M16 2.5v5M16 24.5v5M2.5 16h5M24.5 16h5" stroke="currentColor" stroke-width="1.2"/>
+          <path d="m16 8.5 4.2 11.5-4.2-2.8-4.2 2.8L16 8.5Z" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-name">InvestPilot<span class="brand-sub">Локальный пульт</span></span>
+    </a>
+
+    <nav class="nav" id="primary-nav" aria-label="Основная навигация">
+      <a class="nav-link {{ 'active' if active_path == '/' }}" href="/">Обзор</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/positions') }}" href="/positions">Позиции</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/recommendations') }}" href="/recommendations">Рекомендации</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/goals') }}" href="/goals">Цели</a>
+      <span class="nav-rule" aria-hidden="true"></span>
+      <a class="nav-link {{ 'active' if active_path.startswith('/orders') }}" href="/orders">Заявки</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/risk') }}" href="/risk">Риск</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/analysis') }}" href="/analysis">Анализ</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/screener') }}" href="/screener">Скринер</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/notifications') }}" href="/notifications">Сигналы</a>
+      <a class="nav-link {{ 'active' if active_path.startswith('/audit') }}" href="/audit">Аудит</a>
+    </nav>
+
+    <div class="topdeck-tools">
+      <span class="env-inline">
+        {% if settings.tinvest_client == 'mock' %}
+          <span class="dot mock" aria-hidden="true"></span> MOCK · {{ 'SANDBOX' if settings.tinvest_sandbox else 'LOCAL' }}
+        {% elif settings.tinvest_sandbox %}
+          <span class="dot" aria-hidden="true"></span> T-INVEST · SANDBOX
+        {% else %}
+          <span class="dot real" aria-hidden="true"></span> T-INVEST · REAL
+        {% endif %}
+      </span>
+      <span class="badge accent">{{ trading_mode_label }}</span>
+      {% if web_session %}
+      <span class="user-avatar" title="{{ web_session.username }}">{{ web_session.username[:2]|upper }}</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn ghost small" type="submit">Выйти</button>
+      </form>
+      {% endif %}
+      <button class="btn ghost small nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="primary-nav">Меню</button>
+    </div>
+  </header>
+
+  <main class="main" id="content">
+    <header class="page-head">
+      <div>
+        <div class="page-kicker">InvestPilot Local</div>
+        <h1 class="page-title">{{ page_title or "Обзор" }}</h1>
+      </div>
+      <div class="page-tools">
+        {% if accounts and accounts|length > 1 %}
+        <form class="account-switch" method="post" action="/accounts/select" data-account-switch>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="{{ active_path }}">
+          <label class="account-switch-label" for="account-select">Счёт</label>
+          <select id="account-select" name="account_id">
+            {% for item in accounts %}
+            <option value="{{ item.id }}" {{ 'selected' if active_account and item.id == active_account.id }}>{{ item.name or item.tinvest_account_id }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn ghost small" type="submit">Перейти</button>
+        </form>
+        {% elif active_account %}
+        <span class="account-chip" title="{{ active_account.tinvest_account_id }}">{{ active_account.name or active_account.tinvest_account_id }}</span>
+        {% endif %}
+      </div>
+    </header>
+
+    {% if flash %}
+    <div class="flash {{ flash_level }}" role="status">
+      <span>{{ flash }}</span>
+      <button class="flash-close" type="button" data-dismiss aria-label="Закрыть">×</button>
+    </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+
+    <footer class="footer">
+      <span>Локальный экземпляр · T-Invest API · время в UTC</span>
+      <span>Не является инвестиционной рекомендацией. Решения подтверждает пользователь.</span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

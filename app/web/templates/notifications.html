@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">Журнал уведомлений</h2>
+      <p class="panel-sub">События синхронизации, заявок и риск-контура. Непрочитанных: {{ unread }}.</p>
+    </div>
+    {% if unread %}
+    <form method="post" action="/notifications/read-all">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn ghost small" type="submit">Прочитать все</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+    {% if notifications %}
+    <div class="notification-list">
+      {% for item in notifications %}
+      {% set tone = 'negative' if item.severity in ('ERROR', 'CRITICAL') else 'warning' if item.severity == 'WARNING' else 'info' %}
+      <article class="notification-item {{ 'unread' if not item.is_read }}">
+        <div class="notification-head">
+          <div class="notification-title-row">
+            <span class="badge {{ tone }}">{{ item.severity|severity_label }}</span>
+            <h3 class="notification-title">{{ item.title }}</h3>
+          </div>
+          <span class="faint nowrap">{{ item.created_at|dt_ru }}</span>
+        </div>
+        <p class="notification-message">{{ item.message }}</p>
+        <div class="notification-foot">
+          <span class="faint">{{ item.kind }}{% if item.entity_type %} · {{ item.entity_type }} #{{ item.entity_id }}{% endif %}</span>
+          {% if not item.is_read %}
+          <form method="post" action="/notifications/{{ item.id }}/read">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn ghost small" type="submit">Прочитано</button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">Уведомлений пока нет. Ошибки синхронизации и события заявок появятся здесь.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

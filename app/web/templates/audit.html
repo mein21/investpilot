@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><div><h2 class="panel-title">Журнал действий</h2><p class="panel-sub">Последние 200 событий · секреты вырезаны</p></div><span class="badge neutral">{{ entries|length }}</span></div>
+  <div class="panel-body flush">
+    {% if entries %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Время</th><th>Событие</th><th>Актор</th><th>Объект</th><th>Уровень</th><th>Сообщение</th><th>Детали</th></tr></thead>
+        <tbody>
+        {% for entry in entries %}
+        <tr>
+          <td class="nowrap faint">{{ entry.created_at|dt_ru }}</td>
+          <td class="mono">{{ entry.event_type }}</td>
+          <td>{{ entry.actor }}</td>
+          <td class="faint">{{ entry.entity_type }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</td>
+          <td><span class="badge {{ 'negative' if entry.severity.value in ['ERROR','CRITICAL'] else 'warning' if entry.severity.value == 'WARNING' else 'neutral' }}">{{ entry.severity|severity_label }}</span></td>
+          <td class="muted">{{ entry.message|truncate(110, true, '…') }}</td>
+          <td>
+            {% if entry.request_payload or entry.response_payload %}
+            <details>
+              <summary>JSON</summary>
+              {% if entry.request_payload %}<pre class="audit-json">request: {{ entry.request_payload|tojson(indent=2) }}</pre>{% endif %}
+              {% if entry.response_payload %}<pre class="audit-json">response: {{ entry.response_payload|tojson(indent=2) }}</pre>{% endif %}
+            </details>
+            {% else %}<span class="faint">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty-state"><div class="empty-text">Журнал пуст.</div></div>{% endif %}
+  </div>
+</section>
+{% endblock %}

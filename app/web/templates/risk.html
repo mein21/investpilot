@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет данных для риск-контроля</div><p class="empty-text">Сначала синхронизируйте портфель.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<div class="dashboard-grid">
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">Аварийная остановка</h2><p class="panel-sub">Блокирует создание и отправку любых заявок</p></div></div>
+    <div class="panel-body">
+      <div class="risk-hero">
+        <div>
+          <div class="risk-score {{ 'negative-text' if stop_enabled else 'positive-text' }}">{{ 'ON' if stop_enabled else 'OFF' }}</div>
+          <div class="muted">{{ 'Все заявки блокируются.' if stop_enabled else 'Торговые проверки активны.' }}</div>
+        </div>
+        <form method="post" action="/risk/emergency-stop" hx-post="/risk/emergency-stop" hx-swap="none" hx-disabled-elt="find button">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="enabled" value="{{ '0' if stop_enabled else '1' }}">
+          <button class="btn {{ 'primary' if stop_enabled else 'danger' }}" type="submit" data-confirm="{{ 'Снять аварийную остановку?' if stop_enabled else 'Включить аварийную остановку? Все заявки будут заблокированы.' }}">{{ 'Снять остановку' if stop_enabled else 'Включить остановку' }}</button>
+        </form>
+      </div>
+      <div class="goal-breakdown">
+        <div><div class="label">Режим</div><div class="value">{{ trading_mode_label }}</div></div>
+        <div><div class="label">Real orders armed</div><div class="value">{{ 'Да' if real_orders_armed else 'Нет' }}</div></div>
+        <div><div class="label">Среда</div><div class="value">{{ 'SANDBOX' if settings.tinvest_sandbox else 'REAL' }}</div></div>
+        <div><div class="label">Доступ счёта</div><div class="value {{ 'positive-text' if account_can_trade else 'negative-text' }}">{{ (account.access_level|replace('ACCOUNT_ACCESS_LEVEL_', '')) or 'UNKNOWN' }}</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">Нарушения</h2><p class="panel-sub">Текущие предупреждения портфеля</p></div></div>
+    <div class="panel-body">
+      {% if violations %}
+      <div class="warning-box"><ul style="margin: 0; padding-left: 18px;">{% for item in violations %}<li>{{ item }}</li>{% endfor %}</ul></div>
+      {% else %}<div class="muted">Нарушений не обнаружено.</div>{% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="split">
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">Лимиты</h2><p class="panel-sub">Действующие настройки</p></div></div>
+    <div class="panel-body">
+      {% for label, value in limits %}
+      <div class="list-row"><div class="list-main"><div class="list-title">{{ label }}</div></div><div class="list-side numeric">{{ value }}</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">События риска</h2><p class="panel-sub">Блокировки и предупреждения</p></div></div>
+    <div class="panel-body">
+      {% if events %}
+      <div class="list">
+        {% for event in events %}
+        <div class="list-row">
+          <div class="list-main"><div class="list-title">{{ event.code }}</div><div class="list-sub">{{ event.message|truncate(120, true, '…') }}</div></div>
+          <div class="list-side"><span class="badge {{ 'negative' if event.severity.value in ['ERROR','CRITICAL'] else 'warning' }}">{{ event.severity|severity_label }}</span><div class="list-sub">{{ event.created_at|short_dt }}</div></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="muted">Событий пока нет.</div>{% endif %}
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

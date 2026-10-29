@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Вход · {{ settings.app_name }}</title>
+  <link rel="stylesheet" href="/static/style.css?v=14">
+</head>
+<body class="login-body">
+<div class="login-shell">
+  <section class="login-art">
+    <div class="login-art-top">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="10.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M16 2.5v5M16 24.5v5M2.5 16h5M24.5 16h5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="m16 8.5 4.2 11.5-4.2-2.8-4.2 2.8L16 8.5Z" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="brand-name">InvestPilot<span class="brand-sub">Локальный пульт</span></span>
+      </div>
+      <h1 class="login-headline">Капитал под <em>полным контролем</em>.</h1>
+      <p class="login-copy">Локальный менеджер портфеля для T-Invest API. Синхронизация, цели, прозрачные правила и подтверждение каждой заявки — без облака и автоматической торговли.</p>
+      <div class="login-points">
+        <span class="login-point">Только ваши данные</span>
+        <span class="login-point">Детерминированные правила</span>
+        <span class="login-point">Sandbox по умолчанию</span>
+      </div>
+    </div>
+
+    <svg class="login-route" viewBox="0 0 720 280" fill="none" aria-hidden="true">
+      <path d="M16 232C120 232 128 104 246 104s126 96 214 96 92-156 244-156" stroke="currentColor" stroke-width="1" stroke-dasharray="4 6" opacity=".5"/>
+      <path d="M16 232C120 232 128 104 246 104s126 96 214 96 92-156 244-156" stroke="var(--signal)" stroke-width="2" stroke-linecap="square" stroke-dasharray="1 0" opacity=".85"/>
+      <circle cx="16" cy="232" r="5" fill="var(--paper)"/>
+      <circle cx="246" cy="104" r="4" fill="var(--signal)"/>
+      <circle cx="460" cy="200" r="4" fill="currentColor"/>
+      <circle cx="704" cy="44" r="7" fill="currentColor"/>
+      <circle cx="704" cy="44" r="13" stroke="currentColor" opacity=".35"/>
+      <path d="M16 258h688M16 272h688" stroke="currentColor" opacity=".17"/>
+      <text x="16" y="24" fill="currentColor" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">КУРС / 01</text>
+      <text x="640" y="270" fill="currentColor" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1">UTC</text>
+    </svg>
+
+    <div class="login-foot">Сессии подписаны локальным секретом. Токен T-Invest не покидает backend.</div>
+  </section>
+
+  <section class="login-panel">
+    <div class="login-card">
+      <div class="eyebrow">Доступ к пульту</div>
+      <h2 class="login-title">Вход в приложение</h2>
+      <p class="login-sub">Используйте локальную учётную запись администратора.</p>
+      {% if error %}
+      <div class="flash error login-error" role="alert">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="{{ next_path }}">
+        <div class="field">
+          <label for="username">Логин</label>
+          <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Пароль</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn primary" type="submit">Войти</button>
+      </form>
+      <div class="login-note">Нет доступа? Проверьте ADMIN_USERNAME и ADMIN_PASSWORD в .env.</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+{% if account is none %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Нет синхронизированного счёта</div><p class="empty-text">Синхронизируйте данные, чтобы увидеть позиции и денежные остатки.</p><a class="btn primary" href="/">На обзор</a></div></section>
+{% else %}
+<div class="metric-grid">
+  <div class="metric"><div class="metric-label">Стоимость</div><div class="metric-value numeric">{{ portfolio.total_value|money(portfolio.base_currency) }}</div><div class="metric-foot">{{ account.name }}</div></div>
+  <div class="metric"><div class="metric-label">Инвестировано</div><div class="metric-value numeric">{{ portfolio.invested_value|money(portfolio.base_currency) }}</div><div class="metric-foot">{{ portfolio.positions|length }} позиций</div></div>
+  <div class="metric"><div class="metric-label">Cash</div><div class="metric-value numeric">{{ portfolio.cash_value|money(portfolio.base_currency) }}</div><div class="metric-foot">Свободно {{ portfolio.free_cash_value|money(portfolio.base_currency) }}</div></div>
+  <div class="metric"><div class="metric-label">Комиссии</div><div class="metric-value numeric">{{ portfolio.commission_paid|money(portfolio.base_currency) }}</div><div class="metric-foot">Дивиденды {{ portfolio.dividends_received|money(portfolio.base_currency) }} · купоны {{ portfolio.coupons_received|money(portfolio.base_currency) }}</div></div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2 class="panel-title">Бумаги</h2><p class="panel-sub">Оценка в {{ portfolio.base_currency }} · {{ portfolio.as_of|dt_ru }}</p></div>
+    {% if portfolio.realized_pnl_incomplete %}<span class="badge warning">История P&amp;L неполная</span>{% endif %}
+  </div>
+  <div class="panel-body flush">
+    {% if portfolio.positions %}
+    <div class="table-wrap">
+      <table class="positions-table">
+        <thead>
+          <tr><th class="col-instrument">Инструмент</th><th class="col-class">Класс</th><th class="col-qty text-right">Кол-во</th><th class="col-avg text-right">Средняя</th><th class="col-current text-right">Текущая</th><th class="col-value text-right">Стоимость</th><th class="col-weight text-right">Вес</th><th class="col-pnl text-right">P&amp;L</th><th class="col-realized text-right">Реализ.</th><th class="col-actions text-right">Правила</th></tr>
+        </thead>
+        <tbody>
+        {% for row in portfolio.positions %}
+          <tr>
+            <td class="col-instrument"><div class="ticker">{{ row.ticker }}</div><div class="instrument-name">{{ row.name }}{% if row.is_stale %} · котировка устарела{% endif %}</div></td>
+            <td class="col-class"><span class="badge neutral">{{ row.asset_class|asset_label }}</span></td>
+            <td class="col-qty text-right numeric">{{ row.quantity|quantity }}<div class="cell-note">лот {{ row.lot }}</div></td>
+            <td class="col-avg text-right numeric">{{ row.average_price|money(row.currency) }}</td>
+            <td class="col-current text-right numeric">{% if row.current_price_is_percent %}{{ row.current_price|percent }}<div class="cell-note">{{ row.current_price_per_lot|money(row.currency) }} за лот{% if row.current_nkd > 0 %} · НКД {{ row.current_nkd|money(row.currency) }}{% endif %}</div>{% else %}{{ row.current_price|money(row.currency) }}{% if row.current_nkd > 0 %}<div class="cell-note">НКД {{ row.current_nkd|money(row.currency) }}</div>{% endif %}{% endif %}</td>
+            <td class="col-value text-right numeric">{{ row.value_base|money(portfolio.base_currency) }}</td>
+            <td class="col-weight text-right numeric">{{ row.weight_percent|percent }}</td>
+            <td class="col-pnl text-right numeric {{ 'positive-text' if row.unrealized_pnl > 0 else 'negative-text' if row.unrealized_pnl < 0 }}">{{ row.unrealized_pnl|money(portfolio.base_currency, signed=True) }}</td>
+            <td class="col-realized text-right numeric {{ 'positive-text' if row.realized_pnl > 0 else 'negative-text' if row.realized_pnl < 0 }}">{{ row.realized_pnl|money(portfolio.base_currency, signed=True) }}{% if row.realized_pnl_incomplete %}<div class="cell-note warning-text">неполно</div>{% endif %}</td>
+            <td class="col-actions text-right nowrap">
+              {% if row.instrument_id in excluded_ids %}<span class="badge negative">Исключён</span>{% endif %}
+              {% if can_recommend %}
+              <form method="post" action="/instruments/{{ row.instrument_id }}/exclude" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="excluded" value="{{ '0' if row.instrument_id in excluded_ids else '1' }}">
+                <button class="btn ghost small" type="submit">{{ 'Вернуть' if row.instrument_id in excluded_ids else 'Исключить' }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="empty-state"><div class="empty-text">Позиций нет.</div></div>{% endif %}
+  </div>
+</section>
+
+<div class="split" style="margin-top: 18px;">
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">Денежные остатки</h2><p class="panel-sub">С учётом блокировок</p></div></div>
+    <div class="panel-body flush">
+      {% if portfolio.cash %}
+      <div class="table-wrap"><table><thead><tr><th>Валюта</th><th class="text-right">Сумма</th><th class="text-right">Свободно</th><th class="text-right">В {{ portfolio.base_currency }}</th><th class="text-right">Вес</th></tr></thead><tbody>
+      {% for row in portfolio.cash %}
+        <tr><td class="ticker">{{ row.currency }}</td><td class="text-right numeric">{{ row.amount|money(row.currency) }}</td><td class="text-right numeric">{{ row.free_amount|money(row.currency) }}</td><td class="col-value text-right numeric">{{ row.value_base|money(portfolio.base_currency) }}</td><td class="col-weight text-right numeric">{{ row.weight_percent|percent }}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="empty-state"><div class="empty-text">Нет денежных остатков.</div></div>{% endif %}
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><div><h2 class="panel-title">Концентрация эмитентов</h2><p class="panel-sub">Лимит {{ settings.max_issuer_percent|percent }}</p></div></div>
+    <div class="panel-body">
+      {% if portfolio.issuer_concentration %}
+      {% for row in portfolio.issuer_concentration[:8] %}
+      <div class="allocation-row">
+        <span class="allocation-name">{{ row.issuer_key }}</span>
+        <div class="allocation-bar"><span data-width="{{ row.weight_percent }}"></span><span class="target" data-left="{{ settings.max_issuer_percent }}"></span></div>
+        <span class="allocation-values">{{ row.weight_percent|percent }}</span>
+        <span class="allocation-values">{{ row.value_base|money(portfolio.base_currency) }}</span>
+      </div>
+      {% endfor %}
+      {% else %}<div class="muted">Нет данных.</div>{% endif %}
+    </div>
+  </section>
+</div>
+
+{% if portfolio.warnings %}
+<section class="panel" style="margin-top: 18px;"><div class="panel-body"><div class="warning-box"><strong>Замечания к данным</strong><ul>{% for warning in portfolio.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div></div></section>
+{% endif %}
+{% endif %}
+{% endblock %}

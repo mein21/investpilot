@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="empty-state">
+    <div class="empty-icon">{{ status_code }}</div>
+    <div class="empty-title">{{ 'Доступ запрещён' if status_code == 403 else 'Страница не найдена' if status_code == 404 else 'Ошибка запроса' }}</div>
+    <p class="empty-text">{{ detail }}</p>
+    <a class="btn primary" href="/">Вернуться на обзор</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">{{ 'Новая цель' if mode == 'new' else 'Редактирование цели' }}</h2>
+      <p class="panel-sub">Диапазоны должны покрывать 100% целевой аллокации.</p>
+    </div>
+    <a class="link" href="/goals">К целям</a>
+  </div>
+  <div class="panel-body">
+    {% if error %}<div class="flash error" style="margin-bottom: 18px;" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="{{ '/goals' if mode == 'new' else '/goals/' ~ goal.id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="name">Название</label>
+          <input id="name" name="name" type="text" value="{{ values.name }}" required maxlength="255">
+        </div>
+        <div class="field">
+          <label for="target_amount">Целевая сумма, {{ settings.base_currency }}</label>
+          <input id="target_amount" name="target_amount" type="number" min="0.01" step="0.01" value="{{ values.target_amount }}" required>
+        </div>
+        <div class="field">
+          <label for="target_date">Дата цели</label>
+          <input id="target_date" name="target_date" type="date" value="{{ values.target_date }}" required>
+        </div>
+        <div class="field">
+          <label for="regular_contribution">Регулярный взнос</label>
+          <input id="regular_contribution" name="regular_contribution" type="number" min="0" step="0.01" value="{{ values.regular_contribution }}">
+        </div>
+        <div class="field">
+          <label for="contribution_frequency">Периодичность</label>
+          <select id="contribution_frequency" name="contribution_frequency">
+            {% for value, label in [('MONTHLY','Ежемесячно'), ('WEEKLY','Еженедельно'), ('QUARTERLY','Ежеквартально')] %}
+            <option value="{{ value }}" {{ 'selected' if values.contribution_frequency == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="min_cash_reserve">Мин. денежный резерв, {{ settings.base_currency }}</label>
+          <input id="min_cash_reserve" name="min_cash_reserve" type="number" min="0" step="0.01" value="{{ values.min_cash_reserve }}">
+        </div>
+        <div class="field">
+          <label for="max_drawdown_percent">Максимальная просадка, %</label>
+          <input id="max_drawdown_percent" name="max_drawdown_percent" type="number" min="0" max="100" step="0.01" value="{{ values.max_drawdown_percent }}">
+        </div>
+        <div class="field">
+          <label for="risk_profile">Риск-профиль</label>
+          <select id="risk_profile" name="risk_profile">
+            {% for profile, label in risk_profiles.items() %}
+            <option value="{{ profile.value }}" {{ 'selected' if values.risk_profile == profile.value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field full">
+          <label for="description">Описание</label>
+          <textarea id="description" name="description" maxlength="2000">{{ values.description }}</textarea>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3 class="form-section-title">Стоп-правила</h3>
+        <div class="form-grid">
+          <div class="field">
+            <span class="check-line"><input type="checkbox" id="stop_loss_enabled" name="stop_loss_enabled" value="1" {{ 'checked' if values.stop_loss_enabled == '1' }}> <label for="stop_loss_enabled">Stop-loss включён</label></span>
+            <input name="stop_loss_percent" type="number" min="0.01" max="100" step="0.01" value="{{ values.stop_loss_percent }}" placeholder="Процент просадки">
+          </div>
+          <div class="field">
+            <span class="check-line"><input type="checkbox" id="take_profit_enabled" name="take_profit_enabled" value="1" {{ 'checked' if values.take_profit_enabled == '1' }}> <label for="take_profit_enabled">Take-profit включён</label></span>
+            <input name="take_profit_percent" type="number" min="0.01" max="100" step="0.01" value="{{ values.take_profit_percent }}" placeholder="Процент роста">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3 class="form-section-title">Целевая аллокация</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Класс</th><th>Мин, %</th><th>Цель, %</th><th>Макс, %</th></tr></thead>
+            <tbody>
+            {% for row in allocation_rows %}
+            <tr>
+              <td><span class="badge neutral">{{ row.asset_class|asset_label }}</span></td>
+              <td><input name="{{ row.asset_class.value|lower }}_min" type="number" min="0" max="100" step="0.01" value="{{ row.min }}" aria-label="{{ row.asset_class|asset_label }} минимум"></td>
+              <td><input name="{{ row.asset_class.value|lower }}_target" type="number" min="0" max="100" step="0.01" value="{{ row.target }}" aria-label="{{ row.asset_class|asset_label }} цель"></td>
+              <td><input name="{{ row.asset_class.value|lower }}_max" type="number" min="0" max="100" step="0.01" value="{{ row.max }}" aria-label="{{ row.asset_class|asset_label }} максимум"></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="hint" style="margin-top: 10px;">Сумма целей должна быть 100%. Мин ≤ цель ≤ макс.</p>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Сохранить цель</button>
+        <a class="btn ghost" href="/goals">Отмена</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

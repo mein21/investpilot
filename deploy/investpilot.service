@@ -1,0 +1,19 @@
+[Unit]
+Description=InvestPilot Local
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/investpilot-local
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/investpilot-local/.venv/bin/investpilot serve --host 0.0.0.0 --port 8090 --allow-external
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

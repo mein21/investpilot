@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block content %}
+{% if screener_error %}
+<section class="panel">
+  <div class="empty-state">
+    <div class="empty-title">Скринер недоступен</div>
+    <p class="empty-text">{{ screener_error }}</p>
+    <p class="muted">Проверьте <code>SCREENER_DB_PATH</code> и права на файл кэша.</p>
+  </div>
+</section>
+{% elif screen %}
+<div class="btn-row" style="margin-bottom: 18px;">
+  <span class="badge neutral">Только чтение</span>
+  <span class="badge accent">{{ screen.mode|screener_mode_label }}</span>
+  <span class="badge {{ 'warning' if screen.regime.label == 'risk_off' else 'info' }}">{{ screen.regime.label|regime_label }}</span>
+  <span class="muted">на {{ screen_as_of|date_ru }} · рассчитан {{ screen_generated|dt_ru }}</span>
+  <form method="post" action="/screener/refresh" hx-post="/screener/refresh" hx-swap="none" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn primary small" type="submit"><span class="htmx-indicator spinner"></span> Пересчитать по кэшу</button>
+  </form>
+</div>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">Скринер российских акций</h2>
+      <p class="panel-sub">Детерминированный рейтинг по импульсу, тренду, объёму, консолидации и риску. Score — правило ранжирования, не прогноз доходности.</p>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="metric-grid" style="margin-bottom: 0;">
+      <div class="metric"><div class="metric-label">Кандидатов</div><div class="metric-value numeric">{{ screen.candidates|length }}</div><div class="metric-foot">из {{ screen.filter_stats.score_ok }} после score</div></div>
+      <div class="metric"><div class="metric-label">Прошли качество</div><div class="metric-value numeric">{{ screen.filter_stats.quality_ok }}</div><div class="metric-foot">из {{ screen.filter_stats.shares_total }} акций</div></div>
+      <div class="metric"><div class="metric-label">Режим рынка</div><div class="metric-value" style="font-size:22px">{{ screen.regime.label|regime_label }}</div><div class="metric-foot">{{ screen.benchmark }} · breadth 200 {{ screen.regime.breadth_200|ratio_percent }}</div></div>
+      <div class="metric"><div class="metric-label">Ликвидных</div><div class="metric-value numeric">{{ screen.filter_stats.liquidity_ok }}</div><div class="metric-foot">порог оборота пройден</div></div>
+    </div>
+    <p class="muted" style="margin: 16px 0 0;">Порог score {{ screen.config.min_score|number(0) }} · топ {{ screen.config.max_candidates }} · лимит сектора {{ screen.config.max_sector_share|ratio_percent }} · кэш {{ screener_db }}</p>
+  </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+  <div class="panel-head">
+    <div><h2 class="panel-title">Воронка фильтров</h2><p class="panel-sub">Сколько бумаг осталось после каждого детерминированного условия.</p></div>
+  </div>
+  <div class="panel-body">
+    <div class="funnel">
+      {% set steps = [
+        ('Все акции', screen.filter_stats.shares_total),
+        ('MOEX RUB', screen.filter_stats.moex_rub_common_preferred),
+        ('Активные', screen.filter_stats.active),
+        ('Доступны к покупке', screen.filter_stats.buy_available),
+        ('История', screen.filter_stats.history_ok),
+        ('Активность', screen.filter_stats.activity_ok),
+        ('Ликвидность', screen.filter_stats.liquidity_ok),
+        ('Качество', screen.filter_stats.quality_ok),
+        ('Спред' if screen.filter_stats.spread_checked else 'Спред (не проверен)', screen.filter_stats.spread_ok),
+        ('Score', screen.filter_stats.score_ok)
+      ] %}
+      {% for label, count in steps %}
+      <div class="funnel-step"><div class="funnel-count numeric">{{ count }}</div><div class="funnel-label">{{ label }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="warning-box" style="margin-bottom: 18px;">
+  <strong>Как читать результат</strong>
+  <ul>
+    <li>Score — относительный рейтинг кандидатов, а не вероятность роста и не гарантия доходности.</li>
+    <li>Вселенная построена по текущему списку акций: исторический survivorship bias полностью не устранён.</li>
+    <li>В режиме «Технический + фундаментал» фундаментальные метрики являются текущим снимком, а не point-in-time данными.</li>
+    {% if screen.warnings %}{% for warning in screen.warnings %}<li>{{ warning }}</li>{% endfor %}{% endif %}
+  </ul>
+</div>
+
+{% if screen.candidates %}
+<section class="panel" style="margin-bottom: 18px;">
+  <div class="panel-head">
+    <div>
+      <h2 class="panel-title">Таблица кандидатов</h2>
+      <p class="panel-sub">Место в выборке, рейтинг, ликвидность, спред и относительная сила. Таблица отсортирована по score.</p>
+    </div>
+  </div>
+  <div class="btn-row" style="padding: 0 16px 12px;">
+    <input id="candidate-search" type="text" placeholder="Фильтр: тикер, название или сектор" style="min-width: 260px; min-height: 30px; padding: 4px 9px; font-size: 10px;">
+    <select id="candidate-sort" style="min-height: 30px; padding: 4px 9px; font-size: 10px;">
+      <option value="score-desc">Score ↓</option>
+      <option value="score-asc">Score ↑</option>
+      <option value="ticker-asc">Тикер A–Z</option>
+      <option value="excess3m-desc">3м к MCFTR ↓</option>
+      <option value="excess6m-desc">6м к MCFTR ↓</option>
+      <option value="turnover-desc">Оборот ↓</option>
+      <option value="volatility-asc">Волатильность ↑</option>
+      <option value="drawdown-asc">Просадка ↑</option>
+    </select>
+    <span id="candidate-visible" class="muted"></span>
+  </div>
+  <div class="panel-body flush">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Место</th>
+            <th>Тикер</th>
+            <th>Сектор</th>
+            <th class="text-right">Score</th>
+            <th class="text-right">Цена</th>
+            <th class="text-right">Спред</th>
+            <th class="text-right">Оборот 60д</th>
+            <th class="text-right">3м к MCFTR</th>
+            <th class="text-right">6м к MCFTR</th>
+            <th class="text-right">Волат. 60д</th>
+            <th class="text-right">Просадка 126д</th>
+            <th class="text-right">К max 63д</th>
+          </tr>
+        </thead>
+        <tbody id="candidate-rows">
+          {% for candidate in screen.candidates %}
+          <tr data-candidate data-ticker="{{ candidate.ticker|lower }}" data-name="{{ candidate.name|lower }}" data-sector="{{ (candidate.sector or '')|lower }}" data-score="{{ candidate.score }}" data-excess3m="{{ candidate.excess_3m if candidate.excess_3m is not none else '' }}" data-excess6m="{{ candidate.excess_6m if candidate.excess_6m is not none else '' }}" data-turnover="{{ candidate.median_turnover_60 if candidate.median_turnover_60 is not none else '' }}" data-volatility="{{ candidate.volatility_60 if candidate.volatility_60 is not none else '' }}" data-drawdown="{{ candidate.max_drawdown_126 if candidate.max_drawdown_126 is not none else '' }}">
+            <td class="candidate-rank">{{ loop.index }} / {{ screen.candidates|length }}</td>
+            <td><span class="ticker">{{ candidate.ticker }}</span></td>
+            <td class="muted">{{ candidate.sector or '—' }}</td>
+            <td class="text-right numeric"><strong>{{ candidate.score|number(1) }}</strong></td>
+            <td class="text-right numeric">{{ candidate.price|money('RUB') }}</td>
+            <td class="text-right numeric">{{ candidate.spread_pct|ratio_percent }}</td>
+            <td class="text-right numeric">{{ candidate.median_turnover_60|money('RUB') }}</td>
+            <td class="text-right numeric">{{ candidate.excess_3m|ratio_percent(signed=True) }}</td>
+            <td class="text-right numeric">{{ candidate.excess_6m|ratio_percent(signed=True) }}</td>
+            <td class="text-right numeric">{{ candidate.volatility_60|ratio_percent }}</td>
+            <td class="text-right numeric">{{ candidate.max_drawdown_126|ratio_percent }}</td>
+            <td class="text-right numeric">{{ candidate.dist_high_63|ratio_percent(signed=True) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<div class="rec-grid" id="candidate-cards">
+  {% for candidate in screen.candidates %}
+  <article class="rec-card" data-candidate data-ticker="{{ candidate.ticker|lower }}" data-name="{{ candidate.name|lower }}" data-sector="{{ (candidate.sector or '')|lower }}" data-score="{{ candidate.score }}" data-excess3m="{{ candidate.excess_3m if candidate.excess_3m is not none else '' }}" data-excess6m="{{ candidate.excess_6m if candidate.excess_6m is not none else '' }}" data-turnover="{{ candidate.median_turnover_60 if candidate.median_turnover_60 is not none else '' }}" data-volatility="{{ candidate.volatility_60 if candidate.volatility_60 is not none else '' }}" data-drawdown="{{ candidate.max_drawdown_126 if candidate.max_drawdown_126 is not none else '' }}">
+    <div class="rec-head">
+      <div>
+        <div class="rec-ticker"><span class="faint candidate-rank">#{{ loop.index }} из {{ screen.candidates|length }}</span> {{ candidate.ticker }}</div>
+        <div class="rec-meta">{{ candidate.name }} · {{ candidate.sector or 'Сектор не указан' }} · {{ candidate.class_code }} · лот {{ candidate.lot }}</div>
+        <div class="rules" style="margin-top: 6px;">
+          {% if candidate.buy_available %}<span class="rule-tag pass">Покупка доступна</span>{% else %}<span class="rule-tag fail">Покупка недоступна</span>{% endif %}
+          {% if candidate.for_qual_investor %}<span class="rule-tag fail">Только квалифицированным</span>{% endif %}
+          {% if candidate.api_trade_available %}<span class="rule-tag pass">API-торговля</span>{% endif %}
+          <span class="rule-tag">Режим: {{ screen.mode|screener_mode_label }}</span>
+        </div>
+      </div>
+      <div class="screener-score">
+        <div class="screener-score-value {{ 'strong' if candidate.score|float >= 70 }}">{{ candidate.score|number(1) }}</div>
+        <div class="faint">score / 100</div>
+      </div>
+    </div>
+    <div class="rec-stats">
+      <div class="rec-stat"><div class="label">Цена</div><div class="value">{{ candidate.price|money('RUB') }}</div></div>
+      <div class="rec-stat"><div class="label">6м к MCFTR</div><div class="value {{ 'positive-text' if candidate.excess_6m and candidate.excess_6m|float > 0 else 'negative-text' if candidate.excess_6m }}">{{ candidate.excess_6m|ratio_percent(signed=True) }}</div></div>
+      <div class="rec-stat"><div class="label">Оборот 60д</div><div class="value">{{ candidate.median_turnover_60|money('RUB') }}</div></div>
+      <div class="rec-stat"><div class="label">Спред</div><div class="value">{{ candidate.spread_pct|ratio_percent }}</div></div>
+    </div>
+    <div class="rec-stats">
+      <div class="rec-stat"><div class="label">Волатильность</div><div class="value">{{ candidate.volatility_60|ratio_percent }}</div></div>
+      <div class="rec-stat"><div class="label">Просадка 126д</div><div class="value">{{ candidate.max_drawdown_126|ratio_percent }}</div></div>
+      <div class="rec-stat"><div class="label">К SMA20</div><div class="value {{ 'positive-text' if candidate.stretch_sma20 and candidate.stretch_sma20|float > 0 else 'negative-text' if candidate.stretch_sma20 }}">{{ candidate.stretch_sma20|ratio_percent(signed=True) }}</div></div>
+    </div>
+    <div class="rec-stats" style="border-bottom: 0;">
+      <div class="rec-stat"><div class="label">SMA20</div><div class="value">{{ candidate.sma20|money('RUB') }}</div></div>
+      <div class="rec-stat"><div class="label">SMA50</div><div class="value">{{ candidate.sma50|money('RUB') }}</div></div>
+      <div class="rec-stat"><div class="label">SMA200</div><div class="value">{{ candidate.sma200|money('RUB') }}</div></div>
+      <div class="rec-stat"><div class="label">К max 63д</div><div class="value">{{ candidate.dist_high_63|ratio_percent(signed=True) }}</div></div>
+      <div class="rec-stat"><div class="label">К max 126д</div><div class="value">{{ candidate.dist_high_126|ratio_percent(signed=True) }}</div></div>
+    </div>
+    {% set points = candidate.history|sparkline_points %}
+    {% if points %}
+    <div style="padding: 10px 0 4px;">
+      {% set levels = candidate.history|sparkline_levels({'SMA20': candidate.sma20, 'SMA50': candidate.sma50, 'SMA200': candidate.sma200}) %}
+      <svg viewBox="0 0 200 48" preserveAspectRatio="none" style="width:100%;height:52px;display:block;" role="img" aria-label="График цены за 120 сессий">
+        <polyline points="{{ points }}" fill="none" stroke="{{ 'var(--positive)' if candidate.history[-1].close|float >= candidate.history[0].close|float else 'var(--negative)' }}" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>
+        {% set level_colors = {'SMA20': 'var(--accent)', 'SMA50': 'var(--positive)', 'SMA200': 'var(--negative)'} %}
+        {% for level in levels %}
+        <line x1="0" y1="{{ level.y }}" x2="200" y2="{{ level.y }}" stroke="{{ level_colors.get(level.label, 'var(--faint)') }}" stroke-width="0.8" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"><title>{{ level.label }}: {{ level.price }} ₽</title></line>
+        {% endfor %}
+      </svg>
+      <div class="faint" style="display:flex;justify-content:space-between;gap:8px;">
+        <span>Цена, {{ candidate.history|length }} сессий{% if levels %} · уровни: {% for level in levels %}{{ level.label }} {{ level.price }} ₽{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</span>
+        <span>{{ candidate.history[0].date }} — {{ candidate.history[-1].date }}</span>
+      </div>
+    </div>
+    {% endif %}
+    {% set volume_points = candidate.history|sparkline_volume_points %}
+    {% if volume_points %}
+    <div style="padding: 4px 0 4px;">
+      <svg viewBox="0 0 200 32" preserveAspectRatio="none" style="width:100%;height:34px;display:block;" role="img" aria-label="Объём за 120 сессий">
+        <polyline points="{{ volume_points }}" fill="none" stroke="var(--accent)" stroke-width="1.2" vector-effect="non-scaling-stroke"></polyline>
+      </svg>
+      <div class="faint">Объём, лоты · {{ candidate.history|length }} сессий</div>
+    </div>
+    {% endif %}
+    {% set band = backtest|score_band_for(candidate.score) %}
+    {% if band %}
+    <div class="muted" style="margin-top: 10px;">
+      <strong>Похожие сигналы вне настройки:</strong>
+      score {{ band.bucket }} · сделок {{ band.trades }} · среднее превышение {{ band.mean_excess|ratio_percent(signed=True) }} ·
+      +20% {{ band.target_rate|ratio_percent }} · обыграли {{ band.beat_rate|ratio_percent }}
+      {% if band.insufficient %}<span class="rule-tag fail">Недостаточно данных</span>{% endif %}
+    </div>
+    {% elif backtest %}
+    <div class="muted" style="margin-top: 10px;">Для этого score нет исторической группы.</div>
+    {% else %}
+    <div class="muted" style="margin-top: 10px;">Историческая OOS-проверка ещё не загружена: выполните <code>investpilot screen-backtest</code>.</div>
+    {% endif %}
+    {% if candidate.reasons %}
+    <ul class="rules">
+      {% for reason in candidate.reasons[:3] %}<li class="rule-tag pass">{{ reason }}</li>{% endfor %}
+      {% for penalty in candidate.penalties %}<li class="rule-tag fail" title="{{ penalty.reason }}">{{ penalty.code }} −{{ penalty.points|number(1) }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    <details>
+      <summary>Из чего сложился рейтинг</summary>
+      <div class="table-wrap" style="margin-top: 10px;">
+        <table>
+          <thead><tr><th>Блок</th><th class="text-right">Вклад</th></tr></thead>
+          <tbody>
+            {% for key, value in candidate.blocks.items() %}
+            <tr><td>{{ screener_block_labels.get(key, key) }}</td><td class="text-right numeric">{{ value|number(1) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="muted" style="margin-top: 10px;">История {{ candidate.quality.history_sessions }} сессий · пропуски {{ candidate.quality.missing_ratio|ratio_percent }} · нулевой объём {{ candidate.quality.zero_volume_ratio|ratio_percent }} · последний бар {{ candidate.quality.last_bar_date or '—' }}</div>
+      {% if candidate.fundamental_score is not none %}
+      <div class="muted" style="margin-top: 6px;">Фундаментальный score: {{ candidate.fundamental_score|number(1) }} из 100 · покрытие {{ candidate.fundamental_coverage }} · {{ candidate.fundamental_category|screener_fundamental_category_label }}{% if candidate.fundamental_as_of %} · период {{ candidate.fundamental_as_of }}{% endif %}</div>
+      {% endif %}
+      {% if candidate.invalidation %}
+      <div class="muted" style="margin-top: 8px;"><strong>Когда идея ломается:</strong> {{ candidate.invalidation|join('; ') }}</div>
+      {% endif %}
+      <div class="muted" style="margin-top: 6px;">Торговый статус: {{ candidate.trading_status|trading_status_label }}</div>
+      <div class="faint" style="margin-top: 8px;">Данные: T-Invest, последний бар {{ candidate.quality.last_bar_date or '—' }} · источники: свечи {{ candidate.provenance.price.as_of or '—' }}{% if candidate.provenance.price.fetched_at %} (загружены {{ candidate.provenance.price.fetched_at|dt_ru }}){% endif %}, стакан {{ candidate.provenance.spread.as_of or '—' }}{% if candidate.provenance.spread.fetched_at %} ({{ candidate.provenance.spread.fetched_at|dt_ru }}){% endif %}, фундаментал {{ candidate.provenance.fundamentals.as_of or '—' }}{% if candidate.data_fetched_at %} (загружен {{ candidate.data_fetched_at|dt_ru }}){% endif %}. Score — правило ранжирования, не прогноз.</div>
+      {% if candidate.fundamental_notes %}
+      <ul class="rules">{% for note in candidate.fundamental_notes %}<li class="rule-tag">{{ note }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if candidate.warnings %}
+      <ul class="rules">{% for warning in candidate.warnings %}<li class="rule-tag fail">{{ warning }}</li>{% endfor %}</ul>
+      {% endif %}
+    </details>
+  </article>
+  {% endfor %}
+</div>
+<script src="/static/screener.js" defer></script>
+{% else %}
+<section class="panel"><div class="empty-state"><div class="empty-title">Кандидатов нет</div><p class="empty-text">Фильтры не пропустили ни одну бумагу. Проверьте порог score, ликвидность и режим рынка.</p></div></section>
+{% endif %}
+
+{% if screen.near_candidates %}
+<section class="panel" style="margin-top: 18px;">
+  <div class="panel-head">
+    <div><h2 class="panel-title">Почти прошли</h2><p class="panel-sub">Бумаги ниже порога score или не попавшие в топ. Не являются рекомендацией.</p></div>
+  </div>
+  <div class="panel-body flush">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Тикер</th><th>Название</th><th>Сектор</th><th class="text-right">Score</th></tr></thead>
+        <tbody>
+          {% for candidate in screen.near_candidates %}
+          <tr><td><span class="ticker">{{ candidate.ticker }}</span></td><td>{{ candidate.name }}</td><td class="muted">{{ candidate.sector or '—' }}</td><td class="text-right numeric">{{ candidate.score|number(1) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% else %}
+<section class="panel">
+  <div class="empty-state">
+    <div class="empty-title">Кэш скринера пуст</div>
+    <p class="empty-text">В SQLite кэше пока нет сохранённого расчёта. Заполните кэш через CLI, затем нажмите «Пересчитать по кэшу».</p>
+    <pre class="code-block">SCREENER_DB_PATH={{ screener_db }} .venv/bin/investpilot screen --no-orderbook</pre>
+    <form method="post" action="/screener/refresh" hx-post="/screener/refresh" hx-swap="none" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit"><span class="htmx-indicator spinner"></span> Пересчитать по кэшу</button>
+    </form>
+    <p class="muted" style="margin-top: 14px;">Инструментов: {{ cache_stats.instruments or 0 }} · баров: {{ cache_stats.bars or 0 }} · бенчмарков: {{ cache_stats.benchmark_bars or 0 }}{% if cache_latest %} · последнее обновление {{ cache_latest|dt_ru }}{% endif %}{% if cache_coverage[2] %} · история {{ cache_coverage[0]|date_ru }}…{{ cache_coverage[1]|date_ru }}{% endif %}</p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
